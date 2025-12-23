@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp } from "firebase/app";
 import {
@@ -24,6 +23,7 @@ import {
   Image as ImageIcon,
   Database,
   Plus,
+  Minus,
   Zap,
   ZapOff,
   Settings,
@@ -34,10 +34,10 @@ import {
 } from "lucide-react";
 
 /**
- * ‚úÖ Vercel/Production:
- * - VITE_FIREBASE_CONFIG: JSON en una sola l√≠nea
+ * ? Vercel/Production:
+ * - VITE_FIREBASE_CONFIG: JSON en una sola lÌnea
  * - VITE_APP_ID: string (ej: inventario-hospital)
- * - VITE_INITIAL_AUTH_TOKEN: opcional (vac√≠o)
+ * - VITE_INITIAL_AUTH_TOKEN: opcional (vacÌo)
  */
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || "{}");
 const APP_ID = import.meta.env.VITE_APP_ID || "default-app-id";
@@ -123,6 +123,7 @@ const Button = ({
     primary: "text-white shadow-lg",
     secondary: "bg-gray-100 text-gray-700",
     danger: "bg-red-50 text-red-600",
+    dark: "bg-gray-800 text-white",
   };
   const gradient =
     variant === "primary"
@@ -141,14 +142,29 @@ const Button = ({
   );
 };
 
+const PillButton = ({ active, onClick, children, activeClass, inactiveClass }) => (
+  <button
+    onClick={onClick}
+    className={`px-4 py-2.5 rounded-2xl text-[11px] font-black border transition-all ${
+      active ? activeClass : inactiveClass
+    }`}
+  >
+    {children}
+  </button>
+);
+
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [user, setUser] = useState(null); // sesi√≥n interna (Admin/Instalador)
+  const [user, setUser] = useState(null); // sesiÛn interna (Admin/Instalador)
   const [view, setView] = useState("login");
   const [items, setItems] = useState([]);
   const [config, setConfig] = useState({
     floors: [],
     services: [],
+    signalTypes: [],
+    typologies: [],
+    materials: [],
+    infoMaterials: [],
     authorizedUsers: [],
   });
   const [loading, setLoading] = useState(true);
@@ -158,10 +174,11 @@ export default function App() {
   const initialForm = useMemo(
     () => ({
       piso: "",
-      bloque: "",
       servicio: "",
-      tipoRotulo: "Identificaci√≥n",
-      material: "Acr√≠lico",
+      tipoSenal: "",
+      tipologia: "",
+      material: "",
+      materialInfo: "",
       ancho: "",
       largo: "",
       espesor: "",
@@ -180,7 +197,7 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // 1) Auth Firebase (an√≥nimo o token)
+  // 1) Auth Firebase
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -191,14 +208,13 @@ export default function App() {
         }
       } catch (e) {
         console.error(e);
-        notify("Error de autenticaci√≥n Firebase", "error");
+        notify("Error de autenticaciÛn Firebase", "error");
       }
     };
     initAuth();
 
     const unsub = onAuthStateChanged(auth, (u) => {
       setFirebaseUser(u || null);
-      // recupera sesi√≥n local del hospital (Admin/Instalador)
       if (u) {
         const saved = localStorage.getItem("hospital_session");
         if (saved) {
@@ -212,7 +228,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // 2) Suscripciones Firestore (config + items)
+  // 2) Firestore subscriptions
   useEffect(() => {
     if (!firebaseUser) return;
 
@@ -222,11 +238,24 @@ export default function App() {
       configRef,
       (docSnap) => {
         if (docSnap.exists()) {
-          setConfig(docSnap.data());
+          const data = docSnap.data();
+          setConfig({
+            floors: data.floors || [],
+            services: data.services || [],
+            signalTypes: data.signalTypes || [],
+            typologies: data.typologies || [],
+            materials: data.materials || [],
+            infoMaterials: data.infoMaterials || [],
+            authorizedUsers: data.authorizedUsers || [],
+          });
         } else {
           const def = {
-            floors: ["S√≥tano", "P. Baja", "Piso 1", "Piso 2", "Piso 3"],
-            services: ["Admisi√≥n", "Emergencias", "Laboratorio", "Rayos X"],
+            floors: ["SÛtano", "Planta Baja", "Piso 1", "Piso 2", "Piso 3"],
+            services: ["AdmisiÛn", "Emergencias", "Rayos X", "Laboratorio", "UCI"],
+            signalTypes: ["Informativa", "Preventiva", "Restrictiva", "Emergencia", "ObligaciÛn"],
+            typologies: ["Colgante", "Bandera", "Adosado", "TÛtem", "Directorio"],
+            materials: ["AcrÌlico", "Alucobond", "PVC (Sintra)", "Vidrio", "Acero Inoxidable"],
+            infoMaterials: ["Vinilo de Corte", "ImpresiÛn Digital", "Letras 3D", "Grabado L·ser", "SerigrafÌa"],
             authorizedUsers: [{ name: "Admin", isAdmin: true, pin: "1234" }],
           };
           setDoc(configRef, def);
@@ -258,7 +287,9 @@ export default function App() {
     const nameInput = e.target.username.value.trim().toLowerCase();
     const pinInput = e.target.pin?.value.trim();
 
-    const found = config.authorizedUsers.find((u) => u.name.toLowerCase() === nameInput);
+    const found = (config.authorizedUsers || []).find(
+      (u) => (u.name || "").toLowerCase() === nameInput
+    );
 
     if (found) {
       if (found.isAdmin && found.pin !== pinInput) {
@@ -291,7 +322,7 @@ export default function App() {
         img.onload = () => {
           const canvas = document.createElement("canvas");
           const MAX = 800;
-          const scale = img.width > MAX ? MAX / img.width : 1;
+          const scale = img.width > MAX ? MAX / img.width : 1; // no agrandar
           canvas.width = Math.round(img.width * scale);
           canvas.height = Math.round(img.height * scale);
           const ctx = canvas.getContext("2d");
@@ -303,32 +334,43 @@ export default function App() {
   };
 
   const handlePhoto = async (e) => {
-    if (formData.fotos.length >= 3) return;
+    if ((formData.fotos || []).length >= 3) return;
     setIsCompressing(true);
     const file = e.target.files?.[0];
     if (file) {
       const res = await compressImage(file);
-      setFormData((prev) => ({ ...prev, fotos: [...prev.fotos, res] }));
+      setFormData((prev) => ({
+        ...prev,
+        fotos: [...(prev.fotos || []), res].slice(0, 3),
+      }));
     }
     setIsCompressing(false);
   };
 
   const saveRecord = async () => {
-    if (!formData.piso || !formData.servicio) return notify("Faltan datos", "error");
+    const required = ["piso", "servicio", "tipoSenal", "tipologia", "material", "materialInfo"];
+    const missing = required.filter((k) => !String(formData[k] || "").trim());
+    if (missing.length > 0) {
+      notify("Complete los campos obligatorios", "error");
+      return;
+    }
+
     setLoading(true);
     try {
       const colRef = collection(db, "artifacts", APP_ID, "public", "data", "rotulos");
-      for (let i = 0; i < Number(formData.cantidad || 1); i++) {
-        await addDoc(colRef, {
-          ...formData,
-          cantidad: 1,
-          codigo: `ROT-${Date.now().toString().slice(-4)}-${i}`,
-          responsable: user?.name || "Sin nombre",
-          timestamp: serverTimestamp(),
-          fecha: new Date().toLocaleDateString(),
-        });
-      }
-      setFormData({ ...initialForm, piso: formData.piso, bloque: formData.bloque });
+      const qty = Math.max(1, Number(formData.cantidad || 1));
+
+      // Guardamos UN documento con cantidad (como tu nuevo HTML), NO uno por unidad
+      await addDoc(colRef, {
+        ...formData,
+        cantidad: qty,
+        codigo: `ROT-${Date.now().toString().slice(-4)}`,
+        fecha: new Date().toLocaleDateString(),
+        responsable: user?.name || "Sin nombre",
+        timestamp: serverTimestamp(),
+      });
+
+      setFormData(initialForm);
       setView("list");
       notify("Registro guardado");
     } catch (e) {
@@ -343,10 +385,10 @@ export default function App() {
     try {
       const ref = doc(db, "artifacts", APP_ID, "public", "data", "config", "global");
       await updateDoc(ref, newConfig);
-      notify("Configuraci√≥n actualizada");
+      notify("ConfiguraciÛn actualizada");
     } catch (e) {
       console.error(e);
-      notify("Error de red", "error");
+      notify("Error al guardar config", "error");
     }
     setLoading(false);
   };
@@ -402,7 +444,6 @@ export default function App() {
     );
   }
 
-  // --- App ---
   return (
     <div className="min-h-screen bg-[#fcfcfc] pb-32" style={{ fontFamily: BRAND.font }}>
       <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 px-6 py-4 flex justify-between items-center border-b border-gray-100">
@@ -436,121 +477,247 @@ export default function App() {
       )}
 
       <main className="p-6 max-w-md mx-auto space-y-8">
+        {/* FORM */}
         {view === "form" && (
           <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-            <section className="space-y-3">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                Localizaci√≥n
+            {/* UbicaciÛn y ClasificaciÛn */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase">
+                UbicaciÛn y ClasificaciÛn
               </label>
-              <Card className="p-6 space-y-4">
-                <select
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
-                  value={formData.piso}
-                  onChange={(e) => setFormData({ ...formData, piso: e.target.value })}
-                >
-                  <option value="">Seleccionar Piso</option>
-                  {config.floors.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
 
-                <input
-                  list="srv"
-                  placeholder="Servicio / √Årea"
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
-                  value={formData.servicio}
-                  onChange={(e) => setFormData({ ...formData, servicio: e.target.value })}
-                />
-                <datalist id="srv">
-                  {config.services.map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
+              <select
+                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
+                value={formData.piso}
+                onChange={(e) => setFormData({ ...formData, piso: e.target.value })}
+              >
+                <option value="">Seleccionar Piso</option>
+                {config.floors.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
 
-                <input
-                  placeholder="Observaciones / Bloque"
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
-                  value={formData.bloque}
-                  onChange={(e) => setFormData({ ...formData, bloque: e.target.value })}
-                />
-              </Card>
-            </section>
+              <select
+                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
+                value={formData.servicio}
+                onChange={(e) => setFormData({ ...formData, servicio: e.target.value })}
+              >
+                <option value="">Seleccionar ¡rea / Servicio</option>
+                {config.services.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
 
-            <section className="space-y-3">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                Dimensiones e Iluminaci√≥n
+              <select
+                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none border-t border-gray-100"
+                value={formData.tipoSenal}
+                onChange={(e) => setFormData({ ...formData, tipoSenal: e.target.value })}
+              >
+                <option value="">Seleccionar Tipo de SeÒal</option>
+                {config.signalTypes.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
+              </select>
+            </Card>
+
+            {/* TipologÌa */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                TipologÌa de Soporte
               </label>
-              <Card className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-wrap gap-2">
+                {config.typologies.map((t) => (
+                  <PillButton
+                    key={t}
+                    active={formData.tipologia === t}
+                    onClick={() => setFormData({ ...formData, tipologia: t })}
+                    activeClass="bg-[#e55e51] text-white border-[#e55e51] shadow-md"
+                    inactiveClass="bg-white text-gray-400 border-gray-100"
+                  >
+                    {t}
+                  </PillButton>
+                ))}
+              </div>
+            </Card>
+
+            {/* Material base */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Material Base
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {config.materials.map((m) => (
+                  <PillButton
+                    key={m}
+                    active={formData.material === m}
+                    onClick={() => setFormData({ ...formData, material: m })}
+                    activeClass="bg-gray-800 text-white border-gray-800 shadow-md"
+                    inactiveClass="bg-white text-gray-400 border-gray-100"
+                  >
+                    {m}
+                  </PillButton>
+                ))}
+              </div>
+            </Card>
+
+            {/* Material info */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Gr·fica / Vinilos
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {config.infoMaterials.map((im) => (
+                  <PillButton
+                    key={im}
+                    active={formData.materialInfo === im}
+                    onClick={() => setFormData({ ...formData, materialInfo: im })}
+                    activeClass="bg-indigo-600 text-white border-indigo-600 shadow-md"
+                    inactiveClass="bg-white text-gray-400 border-gray-100"
+                  >
+                    {im}
+                  </PillButton>
+                ))}
+              </div>
+            </Card>
+
+            {/* Dimensiones y Cantidad */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Dimensiones y Cantidad
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[8px] font-bold text-gray-300 ml-1">Ancho (cm)</span>
                   <input
                     type="number"
-                    placeholder="Ancho (cm)"
-                    className="p-4 bg-gray-50 rounded-2xl font-bold text-center outline-none"
+                    className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
                     value={formData.ancho}
                     onChange={(e) => setFormData({ ...formData, ancho: e.target.value })}
                   />
+                </div>
+                <div>
+                  <span className="text-[8px] font-bold text-gray-300 ml-1">Largo (cm)</span>
                   <input
                     type="number"
-                    placeholder="Largo (cm)"
-                    className="p-4 bg-gray-50 rounded-2xl font-bold text-center outline-none"
+                    className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
                     value={formData.largo}
                     onChange={(e) => setFormData({ ...formData, largo: e.target.value })}
                   />
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <span className="text-sm font-bold text-gray-500 uppercase">Sistema de Luz</span>
+              <div>
+                <span className="text-[8px] font-bold text-gray-300 ml-1">Espesor (mm)</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
+                  value={formData.espesor}
+                  onChange={(e) => setFormData({ ...formData, espesor: e.target.value })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl mt-2">
+                <span className="text-[10px] font-black text-gray-400 uppercase ml-2">Cantidad</span>
+                <div className="flex items-center gap-4">
                   <button
                     onClick={() =>
-                      setFormData({ ...formData, tieneIluminacion: !formData.tieneIluminacion })
+                      setFormData({
+                        ...formData,
+                        cantidad: Math.max(1, Number(formData.cantidad || 1) - 1),
+                      })
                     }
-                    className={`p-2 rounded-xl transition-colors ${
-                      formData.tieneIluminacion
-                        ? "bg-amber-100 text-amber-600"
-                        : "bg-gray-200 text-gray-400"
-                    }`}
+                    className="p-2 text-gray-300"
                   >
-                    {formData.tieneIluminacion ? <Zap size={20} /> : <ZapOff size={20} />}
+                    <Minus size={18} />
+                  </button>
+                  <span className="font-black text-lg">{formData.cantidad}</span>
+                  <button
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        cantidad: Math.max(1, Number(formData.cantidad || 1) + 1),
+                      })
+                    }
+                    className="p-2 text-[#e55e51]"
+                  >
+                    <Plus size={18} />
                   </button>
                 </div>
-              </Card>
-            </section>
+              </div>
+            </Card>
 
-            <section className="space-y-3">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                Registro Fotogr√°fico ({formData.fotos.length}/3)
+            {/* IluminaciÛn */}
+            <Card className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  øIluminaciÛn?
+                </label>
+                <button
+                  onClick={() =>
+                    setFormData({ ...formData, tieneIluminacion: !formData.tieneIluminacion })
+                  }
+                  className={`p-3 rounded-xl transition-colors ${
+                    formData.tieneIluminacion
+                      ? "bg-amber-100 text-amber-600"
+                      : "bg-gray-100 text-gray-300"
+                  }`}
+                >
+                  {formData.tieneIluminacion ? <Zap size={18} /> : <ZapOff size={18} />}
+                </button>
+              </div>
+
+              {formData.tieneIluminacion && (
+                <input
+                  placeholder="Especificar (LED, Caja, etc.)"
+                  className="w-full p-4 bg-amber-50 rounded-2xl border border-amber-100 outline-none font-bold text-sm"
+                  value={formData.especificacionIluminacion}
+                  onChange={(e) =>
+                    setFormData({ ...formData, especificacionIluminacion: e.target.value })
+                  }
+                />
+              )}
+            </Card>
+
+            {/* Fotos */}
+            <Card className="p-6 space-y-4 text-center">
+              <label className="block text-[10px] font-black text-gray-400 uppercase">
+                Evidencia Fotogr·fica ({(formData.fotos || []).length}/3)
               </label>
 
-              <Card className="p-6 flex gap-4 overflow-x-auto">
-                {formData.fotos.map((f, i) => (
-                  <div
-                    key={i}
-                    className="w-20 h-20 rounded-xl overflow-hidden relative flex-shrink-0"
-                  >
+              <div className="grid grid-cols-3 gap-3">
+                {(formData.fotos || []).map((f, i) => (
+                  <div key={i} className="aspect-square rounded-2xl overflow-hidden border relative group shadow-sm">
                     <img src={f} className="w-full h-full object-cover" />
                     <button
                       onClick={() =>
                         setFormData({
                           ...formData,
-                          fotos: formData.fotos.filter((_, idx) => idx !== i),
+                          fotos: (formData.fotos || []).filter((_, idx) => idx !== i),
                         })
                       }
-                      className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-lg"
+                      className="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <XCircle size={12} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 ))}
 
-                {formData.fotos.length < 3 && (
-                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-100 flex items-center justify-center text-gray-300 cursor-pointer">
+                {(formData.fotos || []).length < 3 && (
+                  <label className="aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300 cursor-pointer">
                     {isCompressing ? (
-                      <div className="animate-spin h-5 w-5 border-2 border-red-500 border-t-transparent rounded-full" />
+                      <div className="animate-spin h-6 w-6 border-2 border-[#e55e51] border-t-transparent rounded-full mb-1" />
                     ) : (
-                      <Camera />
+                      <Camera className="mb-1" />
                     )}
+                    <span className="text-[8px] font-bold uppercase">Capturar</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -560,58 +727,63 @@ export default function App() {
                     />
                   </label>
                 )}
-              </Card>
-            </section>
+              </div>
+            </Card>
 
             <Button
               onClick={saveRecord}
-              className="w-full py-6 text-xl rounded-[30px] font-black uppercase tracking-widest"
+              className="w-full py-6 text-sm rounded-[2rem] font-black uppercase tracking-widest shadow-2xl"
             >
-              Registrar √çtem
+              Guardar Registro
             </Button>
           </div>
         )}
 
+        {/* LIST */}
         {view === "list" && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-black text-gray-800">Inventario</h2>
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <h2 className="text-2xl font-black text-gray-800">Registros Recientes</h2>
 
             {items.length === 0 ? (
-              <div className="text-center py-20 text-gray-200 uppercase text-[10px] font-black tracking-widest">
+              <div className="text-center py-20 text-gray-300 font-bold text-xs uppercase">
                 Sin registros
               </div>
             ) : (
               items.map((it) => (
-                <Card
-                  key={it.id}
-                  className="p-4 flex gap-4 items-center animate-in fade-in duration-300"
-                >
-                  <div className="w-16 h-16 bg-gray-50 rounded-xl overflow-hidden flex-shrink-0">
+                <Card key={it.id} className="p-4 flex gap-4 items-center">
+                  <div className="w-16 h-16 bg-gray-50 rounded-2xl overflow-hidden border flex-shrink-0 flex items-center justify-center">
                     {it.fotos?.[0] ? (
                       <img src={it.fotos[0]} className="w-full h-full object-cover" />
                     ) : (
-                      <ImageIcon className="m-auto text-gray-200" size={24} />
+                      <ImageIcon className="text-gray-200" size={22} />
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-black text-[#e55e51] uppercase">
-                      {it.codigo}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[9px] font-black text-[#e55e51] uppercase bg-red-50 px-1.5 py-0.5 rounded">
+                        {it.codigo}
+                      </span>
+                      <span className="text-[9px] font-black text-gray-400 uppercase truncate">
+                        {it.tipoSenal || "S/T"}
+                      </span>
                     </div>
-                    <div className="font-bold text-gray-800 text-sm truncate">
+
+                    <div className="font-black text-gray-800 truncate leading-tight">
                       {it.servicio}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1 uppercase font-bold">
-                      {it.piso} ¬∑ {it.bloque || "General"}
+
+                    <div className="text-[10px] text-gray-400 font-bold mt-1">
+                      {(it.tipologia || "S/T")} ∑ {(it.material || "S/M")} / {(it.materialInfo || "S/G")}
+                      <br />
+                      {(it.piso || "S/P")} ∑ {(it.cantidad || 1)} ud.
                     </div>
                   </div>
 
                   {user.isAdmin && (
                     <button
                       onClick={() =>
-                        deleteDoc(
-                          doc(db, "artifacts", APP_ID, "public", "data", "rotulos", it.id)
-                        )
+                        deleteDoc(doc(db, "artifacts", APP_ID, "public", "data", "rotulos", it.id))
                       }
                       className="p-2 text-gray-200 hover:text-red-500"
                     >
@@ -624,61 +796,115 @@ export default function App() {
           </div>
         )}
 
+        {/* ADMIN */}
         {view === "admin" && user.isAdmin && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
-              <Settings size={16} /> Configuraci√≥n de Red
-            </h3>
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <h2 className="text-2xl font-black text-gray-800 px-1 flex items-center gap-2">
+              <Settings size={18} /> ConfiguraciÛn
+            </h2>
 
-            <Card className="p-6 space-y-6">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
-                  Lista de Pisos
-                </label>
-                <textarea
-                  defaultValue={config.floors.join("\n")}
-                  className="w-full p-4 bg-gray-50 rounded-2xl text-xs h-32 outline-none font-medium"
-                  id="f_input"
-                />
-              </div>
+            {/* Config de cat·logos (como tu HTML) */}
+            <Card className="p-6 space-y-4">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Tipos de SeÒal
+              </label>
+              <textarea
+                id="edit-signalTypes"
+                defaultValue={(config.signalTypes || []).join("\n")}
+                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
+              />
 
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
-                  Lista de Servicios
-                </label>
-                <textarea
-                  defaultValue={config.services.join("\n")}
-                  className="w-full p-4 bg-gray-50 rounded-2xl text-xs h-32 outline-none font-medium"
-                  id="s_input"
-                />
-              </div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Servicios / ¡reas
+              </label>
+              <textarea
+                id="edit-services"
+                defaultValue={(config.services || []).join("\n")}
+                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
+              />
+
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                TipologÌas de Soporte
+              </label>
+              <textarea
+                id="edit-typologies"
+                defaultValue={(config.typologies || []).join("\n")}
+                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
+              />
+
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Materiales Base
+              </label>
+              <textarea
+                id="edit-materials"
+                defaultValue={(config.materials || []).join("\n")}
+                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
+              />
+
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Materiales de InformaciÛn
+              </label>
+              <textarea
+                id="edit-infoMaterials"
+                defaultValue={(config.infoMaterials || []).join("\n")}
+                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
+              />
 
               <Button
-                onClick={() =>
+                variant="dark"
+                className="w-full"
+                onClick={() => {
+                  const signalTypes = document
+                    .getElementById("edit-signalTypes")
+                    .value.split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
+                  const services = document
+                    .getElementById("edit-services")
+                    .value.split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
+                  const typologies = document
+                    .getElementById("edit-typologies")
+                    .value.split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
+                  const materials = document
+                    .getElementById("edit-materials")
+                    .value.split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
+                  const infoMaterials = document
+                    .getElementById("edit-infoMaterials")
+                    .value.split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
                   updateGlobalConfig({
                     ...config,
-                    floors: document
-                      .getElementById("f_input")
-                      .value.split("\n")
-                      .filter((x) => x.trim()),
-                    services: document
-                      .getElementById("s_input")
-                      .value.split("\n")
-                      .filter((x) => x.trim()),
-                  })
-                }
-                className="w-full"
+                    signalTypes,
+                    services,
+                    typologies,
+                    materials,
+                    infoMaterials,
+                  });
+                }}
               >
-                Actualizar Cat√°logos
+                Guardar Cambios
               </Button>
             </Card>
 
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mt-8">
+            {/* Usuarios (lo que ya tenÌas) */}
+            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mt-4">
               <UserCheck size={16} /> Control de Personal
             </h3>
 
             <Card className="p-6 space-y-4">
-              {config.authorizedUsers.map((u, i) => (
+              {(config.authorizedUsers || []).map((u, i) => (
                 <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
                   <div>
                     <div className={`text-sm font-bold ${u.isAdmin ? "text-red-500" : "text-gray-700"}`}>
@@ -724,7 +950,7 @@ export default function App() {
                         updateGlobalConfig({
                           ...config,
                           authorizedUsers: [
-                            ...config.authorizedUsers,
+                            ...(config.authorizedUsers || []),
                             { name: n, pin: p, isAdmin: !!p },
                           ],
                         });
@@ -743,11 +969,12 @@ export default function App() {
         )}
       </main>
 
+      {/* NAV */}
       <nav className="fixed bottom-6 left-6 right-6 h-20 bg-white/90 backdrop-blur-xl rounded-[35px] border border-gray-100 shadow-2xl flex justify-around items-center px-4 z-50">
         <button
           onClick={() => setView("form")}
           className={`p-4 rounded-2xl transition-all ${
-            view === "form" ? "bg-[#f9dcd1] text-[#e55e51]" : "text-gray-300 hover:text-gray-400"
+            view === "form" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300 hover:text-gray-400"
           }`}
         >
           <Plus size={24} />
@@ -756,7 +983,7 @@ export default function App() {
         <button
           onClick={() => setView("list")}
           className={`p-4 rounded-2xl transition-all ${
-            view === "list" ? "bg-[#f9dcd1] text-[#e55e51]" : "text-gray-300"
+            view === "list" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300"
           }`}
         >
           <Database size={24} />
@@ -766,7 +993,7 @@ export default function App() {
           <button
             onClick={() => setView("admin")}
             className={`p-4 rounded-2xl transition-all ${
-              view === "admin" ? "bg-[#f9dcd1] text-[#e55e51]" : "text-gray-300"
+              view === "admin" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300"
             }`}
           >
             <Settings size={24} />
