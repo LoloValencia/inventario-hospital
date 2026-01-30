@@ -1,13 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { initializeApp } from "firebase/app";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import {
-  getAuth,
-  signInAnonymously,
-  signInWithCustomToken,
-  onAuthStateChanged,
-} from "firebase/auth";
-import {
-  getFirestore,
   doc,
   setDoc,
   updateDoc,
@@ -33,20 +26,17 @@ import {
   XCircle,
 } from "lucide-react";
 
-/**
- * ? Vercel/Production:
- * - VITE_FIREBASE_CONFIG: JSON en una sola línea
- * - VITE_APP_ID: string (ej: inventario-hospital)
- * - VITE_INITIAL_AUTH_TOKEN: opcional (vacío)
- */
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || "{}");
-const APP_ID = import.meta.env.VITE_APP_ID || "default-app-id";
-const INITIAL_AUTH_TOKEN = import.meta.env.VITE_INITIAL_AUTH_TOKEN || "";
+import { auth, db } from "./firebase";
 
-// --- Inicializa Firebase ---
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+/**
+ * ? IMPORTANTE:
+ * - App.jsx NO debe inicializar Firebase.
+ * - La inicialización vive SOLO en src/firebase.js
+ */
+
+// Usamos el Project ID como APP_ID (era lo más estable y ya lo tienes en env)
+const APP_ID =
+  import.meta.env.VITE_FIREBASE_PROJECT_ID || "inventario-hospital-610b5";
 
 // --- Marca ---
 const BRAND = {
@@ -64,9 +54,7 @@ const HospitalLogo = ({ className = "" }) => (
     xmlns="http://www.w3.org/2000/svg"
     style={{ enableBackground: "new 0 0 161.1 48.7" }}
   >
-    <style type="text/css">
-      {`.st0{fill:#686875;} .st1{fill:#E55E51;}`}
-    </style>
+    <style type="text/css">{`.st0{fill:#686875;} .st1{fill:#E55E51;}`}</style>
     <g id="Dolores">
       <g>
         <path
@@ -127,7 +115,9 @@ const Button = ({
   };
   const gradient =
     variant === "primary"
-      ? { background: `linear-gradient(135deg, ${BRAND.secondary} 0%, #C44D42 100%)` }
+      ? {
+          background: `linear-gradient(135deg, ${BRAND.secondary} 0%, #C44D42 100%)`,
+        }
       : {};
   return (
     <button
@@ -142,7 +132,13 @@ const Button = ({
   );
 };
 
-const PillButton = ({ active, onClick, children, activeClass, inactiveClass }) => (
+const PillButton = ({
+  active,
+  onClick,
+  children,
+  activeClass,
+  inactiveClass,
+}) => (
   <button
     onClick={onClick}
     className={`px-4 py-2.5 rounded-2xl text-[11px] font-black border transition-all ${
@@ -197,15 +193,11 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // 1) Auth Firebase
+  // 1) Auth Firebase (anónimo)
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (INITIAL_AUTH_TOKEN) {
-          await signInWithCustomToken(auth, INITIAL_AUTH_TOKEN);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (e) {
         console.error(e);
         notify("Error de autenticación Firebase", "error");
@@ -232,7 +224,15 @@ export default function App() {
   useEffect(() => {
     if (!firebaseUser) return;
 
-    const configRef = doc(db, "artifacts", APP_ID, "public", "data", "config", "global");
+    const configRef = doc(
+      db,
+      "artifacts",
+      APP_ID,
+      "public",
+      "data",
+      "config",
+      "global"
+    );
 
     const unsubConfig = onSnapshot(
       configRef,
@@ -252,10 +252,28 @@ export default function App() {
           const def = {
             floors: ["Sótano", "Planta Baja", "Piso 1", "Piso 2", "Piso 3"],
             services: ["Admisión", "Emergencias", "Rayos X", "Laboratorio", "UCI"],
-            signalTypes: ["Informativa", "Preventiva", "Restrictiva", "Emergencia", "Obligación"],
+            signalTypes: [
+              "Informativa",
+              "Preventiva",
+              "Restrictiva",
+              "Emergencia",
+              "Obligación",
+            ],
             typologies: ["Colgante", "Bandera", "Adosado", "Tótem", "Directorio"],
-            materials: ["Acrílico", "Alucobond", "PVC (Sintra)", "Vidrio", "Acero Inoxidable"],
-            infoMaterials: ["Vinilo de Corte", "Impresión Digital", "Letras 3D", "Grabado Láser", "Serigrafía"],
+            materials: [
+              "Acrílico",
+              "Alucobond",
+              "PVC (Sintra)",
+              "Vidrio",
+              "Acero Inoxidable",
+            ],
+            infoMaterials: [
+              "Vinilo de Corte",
+              "Impresión Digital",
+              "Letras 3D",
+              "Grabado Láser",
+              "Serigrafía",
+            ],
             authorizedUsers: [{ name: "Admin", isAdmin: true, pin: "1234" }],
           };
           setDoc(configRef, def);
@@ -635,6 +653,7 @@ export default function App() {
                       })
                     }
                     className="p-2 text-gray-300"
+                    type="button"
                   >
                     <Minus size={18} />
                   </button>
@@ -647,6 +666,7 @@ export default function App() {
                       })
                     }
                     className="p-2 text-[#e55e51]"
+                    type="button"
                   >
                     <Plus size={18} />
                   </button>
@@ -669,6 +689,7 @@ export default function App() {
                       ? "bg-amber-100 text-amber-600"
                       : "bg-gray-100 text-gray-300"
                   }`}
+                  type="button"
                 >
                   {formData.tieneIluminacion ? <Zap size={18} /> : <ZapOff size={18} />}
                 </button>
@@ -694,7 +715,10 @@ export default function App() {
 
               <div className="grid grid-cols-3 gap-3">
                 {(formData.fotos || []).map((f, i) => (
-                  <div key={i} className="aspect-square rounded-2xl overflow-hidden border relative group shadow-sm">
+                  <div
+                    key={i}
+                    className="aspect-square rounded-2xl overflow-hidden border relative group shadow-sm"
+                  >
                     <img src={f} className="w-full h-full object-cover" />
                     <button
                       onClick={() =>
@@ -704,6 +728,7 @@ export default function App() {
                         })
                       }
                       className="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      type="button"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -774,7 +799,8 @@ export default function App() {
                     </div>
 
                     <div className="text-[10px] text-gray-400 font-bold mt-1">
-                      {(it.tipologia || "S/T")} · {(it.material || "S/M")} / {(it.materialInfo || "S/G")}
+                      {(it.tipologia || "S/T")} · {(it.material || "S/M")} /{" "}
+                      {(it.materialInfo || "S/G")}
                       <br />
                       {(it.piso || "S/P")} · {(it.cantidad || 1)} ud.
                     </div>
@@ -783,9 +809,12 @@ export default function App() {
                   {user.isAdmin && (
                     <button
                       onClick={() =>
-                        deleteDoc(doc(db, "artifacts", APP_ID, "public", "data", "rotulos", it.id))
+                        deleteDoc(
+                          doc(db, "artifacts", APP_ID, "public", "data", "rotulos", it.id)
+                        )
                       }
                       className="p-2 text-gray-200 hover:text-red-500"
+                      type="button"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -907,7 +936,11 @@ export default function App() {
               {(config.authorizedUsers || []).map((u, i) => (
                 <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
                   <div>
-                    <div className={`text-sm font-bold ${u.isAdmin ? "text-red-500" : "text-gray-700"}`}>
+                    <div
+                      className={`text-sm font-bold ${
+                        u.isAdmin ? "text-red-500" : "text-gray-700"
+                      }`}
+                    >
                       {u.name}
                     </div>
                     <div className="text-[8px] uppercase text-gray-400 tracking-widest font-black">
@@ -923,6 +956,7 @@ export default function App() {
                         updateGlobalConfig({ ...config, authorizedUsers: copy });
                       }}
                       className="text-gray-300 hover:text-red-500 transition-colors"
+                      type="button"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -959,6 +993,7 @@ export default function App() {
                       }
                     }}
                     className="bg-gray-800 text-white px-6 rounded-2xl font-black transition-transform active:scale-90"
+                    type="button"
                   >
                     +
                   </button>
@@ -974,8 +1009,11 @@ export default function App() {
         <button
           onClick={() => setView("form")}
           className={`p-4 rounded-2xl transition-all ${
-            view === "form" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300 hover:text-gray-400"
+            view === "form"
+              ? "bg-[#f9dcd1] text-[#e55e51] scale-110"
+              : "text-gray-300 hover:text-gray-400"
           }`}
+          type="button"
         >
           <Plus size={24} />
         </button>
@@ -985,6 +1023,7 @@ export default function App() {
           className={`p-4 rounded-2xl transition-all ${
             view === "list" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300"
           }`}
+          type="button"
         >
           <Database size={24} />
         </button>
@@ -993,8 +1032,11 @@ export default function App() {
           <button
             onClick={() => setView("admin")}
             className={`p-4 rounded-2xl transition-all ${
-              view === "admin" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300"
+              view === "admin"
+                ? "bg-[#f9dcd1] text-[#e55e51] scale-110"
+                : "text-gray-300"
             }`}
+            type="button"
           >
             <Settings size={24} />
           </button>
