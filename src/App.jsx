@@ -1,161 +1,89 @@
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { enqueue, readQueue, removeById } from "./offlineQueue";
 import React, { useEffect, useMemo, useState } from "react";
-import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  updateDoc,
-  collection,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  serverTimestamp,
-} from "firebase/firestore";
 import {
   Camera,
   Trash2,
-  Image as ImageIcon,
-  Database,
   Plus,
   Minus,
   Zap,
   ZapOff,
   Settings,
   LogOut,
+  Database,
   UserCheck,
   CheckCircle,
   XCircle,
 } from "lucide-react";
 
-import { auth, db } from "./firebase";
+import { auth, db, storage } from "./firebase";
+import {
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 
-/**
- * ? IMPORTANTE:
- * - App.jsx NO debe inicializar Firebase.
- * - La inicialización vive SOLO en src/firebase.js
- */
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 
-// Usamos el Project ID como APP_ID (era lo más estable y ya lo tienes en env)
-const APP_ID =
-  import.meta.env.VITE_FIREBASE_PROJECT_ID || "inventario-hospital-610b5";
+import {
+  signInAnonymously,
+  onAuthStateChanged,
+} from "firebase/auth";
 
-// --- Marca ---
-const BRAND = {
-  primary: "#686874",
-  secondary: "#e55e51",
-  accent: "#f9dcd1",
-  font: "'Inter', sans-serif",
-};
+/* ======================================================
+   CONFIG
+====================================================== */
+const APP_ID = import.meta.env.VITE_APP_ID || "inventario-hospital";
 
-// --- LOGO ---
-const HospitalLogo = ({ className = "" }) => (
-  <svg
-    viewBox="0 0 161.1 48.7"
-    className={className}
-    xmlns="http://www.w3.org/2000/svg"
-    style={{ enableBackground: "new 0 0 161.1 48.7" }}
-  >
-    <style type="text/css">{`.st0{fill:#686875;} .st1{fill:#E55E51;}`}</style>
-    <g id="Dolores">
-      <g>
-        <path
-          className="st0"
-          d="M24.4,0C10.7,0,0,10.6,0,24s10.7,24.7,24.4,24.7S48.7,37.9,48.7,24S38,0,24.4,0z M24.4,44.5
-          c-11.5,0-20.2-8.8-20.2-20.5S12.9,4.2,24.4,4.2S44.5,12.7,44.5,24S35.9,44.5,24.4,44.5z"
-        />
-        <path
-          className="st1"
-          d="M24.4,8.5c-8.5,0-15.1,6.9-15.1,15.6s6.6,16.2,15.1,16.2s15.1-7.1,15.1-16.2S32.8,8.5,24.4,8.5z M24.4,36.1
-          c-6.1,0-10.9-5.3-10.9-12s4.8-11.4,10.9-11.4s10.9,5,10.9,11.4C35.3,30.8,30.5,36.1,24.4,36.1z"
-        />
-        <path
-          className="st0"
-          d="M54.9,7H51V3.2h18c7.6,0,13.2,5,13.2,12.9s-5.6,13-13.2,13h-9.8v16.8h-4.2C54.9,45.9,54.9,7,54.9,7z
-          M68.5,25.4c5.6,0,9.3-3.5,9.3-9.3S74.1,7,68.5,7h-9.3v18.4H68.5z"
-        />
-        <path
-          className="st0"
-          d="M90.1,7h-3.9V3.2h24.4c2.6,0,3.7,1.1,3.7,3.7v4.3h-4V8.3c0-0.9-0.5-1.3-1.3-1.3H94.3v15.5h16v3.8h-16v14.5
-          c0,0.9,0.5,1.3,1.3,1.3h15c0.8,0,1.3-0.4,1.3-1.3v-2.8h3.9v4.2c0,2.6-1.1,3.7-3.7,3.7H93.8c-2.6,0-3.7-1.1-3.7-3.7L90.1,7L90.1,7z"
-        />
-        <path
-          className="st0"
-          d="M120,42.1h2.6c0.8,0,1.3-0.4,1.3-1.3V3.2h3.9l21.8,30.4c1.5,2.1,3.5,5.6,3.5,5.6h0.1c0,0-0.3-3.3-0.3-5.6V6.9
-          c0-2.6,1.1-3.7,3.7-3.7h4.5V7h-2.6c-0.9,0-1.3,0.4-1.3,1.3v37.6h-3.9l-21.8-30.4c-1.5-2.1-3.5-5.5-3.5-5.5h-0.1
-          c0,0,0.4,3.3,0.4,5.5v26.7c0,2.6-1.1,3.7-3.7,3.7H120L120,42.1L120,42.1z"
-        />
-      </g>
-    </g>
-  </svg>
-);
-
-// --- UI ---
-const Card = ({ children, className = "" }) => (
-  <div
-    className={`bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden ${className}`}
-  >
-    {children}
-  </div>
-);
-
+/* ======================================================
+   UI helpers
+====================================================== */
 const Button = ({
-  onClick,
   children,
+  onClick,
+  type = "button",
+  disabled = false,
   variant = "primary",
   className = "",
-  disabled = false,
-  type = "button",
 }) => {
   const base =
-    "flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-semibold transition-all active:scale-95 disabled:opacity-50";
+    "flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold transition-all disabled:opacity-50";
   const styles = {
-    primary: "text-white shadow-lg",
+    primary: "bg-[#e55e51] text-white",
     secondary: "bg-gray-100 text-gray-700",
-    danger: "bg-red-50 text-red-600",
     dark: "bg-gray-800 text-white",
   };
-  const gradient =
-    variant === "primary"
-      ? {
-          background: `linear-gradient(135deg, ${BRAND.secondary} 0%, #C44D42 100%)`,
-        }
-      : {};
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
       className={`${base} ${styles[variant]} ${className}`}
-      style={gradient}
     >
       {children}
     </button>
   );
 };
 
-const PillButton = ({
-  active,
-  onClick,
-  children,
-  activeClass,
-  inactiveClass,
-}) => (
-  <button
-    onClick={onClick}
-    className={`px-4 py-2.5 rounded-2xl text-[11px] font-black border transition-all ${
-      active ? activeClass : inactiveClass
-    }`}
-  >
-    {children}
-  </button>
-);
-
+/* ======================================================
+   APP
+====================================================== */
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [user, setUser] = useState(null); // sesión interna (Admin/Instalador)
+  const [user, setUser] = useState(null);
   const [view, setView] = useState("login");
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [notification, setNotification] = useState(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
   const [config, setConfig] = useState({
     floors: [],
     services: [],
@@ -165,100 +93,27 @@ export default function App() {
     infoMaterials: [],
     authorizedUsers: [],
   });
-  const [loading, setLoading] = useState(true);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [notification, setNotification] = useState(null);
-const [isOnline, setIsOnline] = useState(navigator.onLine);
-const [pendingCount, setPendingCount] = useState(0);
-const [syncing, setSyncing] = useState(false);
-
-useEffect(() => {
-  const on = async () => {
-    setIsOnline(true);
-    const q = await readQueue();
-    setPendingCount(q.length);
-  };
-  const off = async () => {
-    setIsOnline(false);
-    const q = await readQueue();
-    setPendingCount(q.length);
-  };
-
-  window.addEventListener("online", on);
-  window.addEventListener("offline", off);
-
-  // al cargar app
-  (async () => {
-    const q = await readQueue();
-    setPendingCount(q.length);
-  })();
-
-  return () => {
-    window.removeEventListener("online", on);
-    window.removeEventListener("offline", off);
-  };
-}, []);
-
-const compressToJpegBlob = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.src = ev.target.result;
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 1200;
-        const scale = img.width > MAX ? MAX / img.width : 1;
-
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("No se pudo comprimir"));
-            resolve(blob);
-          },
-          "image/jpeg",
-          0.7
-        );
-      };
-
-      img.onerror = () => reject(new Error("Imagen inválida"));
-    };
-
-    reader.onerror = () => reject(new Error("No se pudo leer archivo"));
-  });
-};
 
   const initialForm = useMemo(
-  () => ({
-    codigo: "",
-    piso: "",
-    servicio: "",
-    tipoSenal: "",
-    tipologia: "",
-    material: "",
-    materialInfo: "",
-    ancho: "",
-    largo: "",
-    espesor: "",
-    tieneIluminacion: false,
-    especificacionIluminacion: "",
-    cantidad: 1,
-
-    // ? NUEVO
-    photoUrls: [],   // cuando SI hay internet
-    photoPaths: [],  // para saber dónde quedó guardada en Storage
-    photoBlobs: [],  // cuando NO hay internet (se guarda en el teléfono temporalmente)
-  }),
-  []
-);
+    () => ({
+      codigo: "",
+      piso: "",
+      servicio: "",
+      tipoSenal: "",
+      tipologia: "",
+      material: "",
+      materialInfo: "",
+      ancho: "",
+      largo: "",
+      espesor: "",
+      tieneIluminacion: false,
+      especificacionIluminacion: "",
+      cantidad: 1,
+      photoUrls: [],
+      photoPaths: [],
+    }),
+    []
+  );
 
   const [formData, setFormData] = useState(initialForm);
 
@@ -267,34 +122,35 @@ const compressToJpegBlob = (file) => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // 1) Auth Firebase (anónimo)
+  /* ======================================================
+     ONLINE / OFFLINE
+  ====================================================== */
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.error(e);
-        notify("Error de autenticación Firebase", "error");
-      }
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
     };
-    initAuth();
+  }, []);
 
+  /* ======================================================
+     AUTH
+  ====================================================== */
+  useEffect(() => {
+    signInAnonymously(auth).catch(console.error);
     const unsub = onAuthStateChanged(auth, (u) => {
       setFirebaseUser(u || null);
-      if (u) {
-        const saved = localStorage.getItem("hospital_session");
-        if (saved) {
-          setUser(JSON.parse(saved));
-          setView("form");
-        }
-      }
       setLoading(false);
     });
-
     return () => unsub();
   }, []);
 
-  // 2) Firestore subscriptions
+  /* ======================================================
+     FIRESTORE SUBSCRIPTIONS
+  ====================================================== */
   useEffect(() => {
     if (!firebaseUser) return;
 
@@ -308,65 +164,37 @@ const compressToJpegBlob = (file) => {
       "global"
     );
 
-    const unsubConfig = onSnapshot(
-      configRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setConfig({
-            floors: data.floors || [],
-            services: data.services || [],
-            signalTypes: data.signalTypes || [],
-            typologies: data.typologies || [],
-            materials: data.materials || [],
-            infoMaterials: data.infoMaterials || [],
-            authorizedUsers: data.authorizedUsers || [],
-          });
-        } else {
-          const def = {
-            floors: ["Subsuelo", "Planta Baja", "Piso 1", "Piso 2", "Piso 3", "Piso 4","Piso 5","Exterior"],
-            services: ["Admisión", "Emergencias", "Rayos X", "Laboratorio", "UCI"],
-            signalTypes: [
-              "Identificativa",
-              "Direccional",
-              "Orientativa",
-              "Informativa",
-              "Reguladora",
-            ],
-            typologies: ["Colgante", "Bandera", "Adosado", "Tótem", "Paleta"],
-            materials: [
-              "Acrílico",
-              "Alucobond",
-              "Sintra",
-              "Vidrio",
-              "Acero Inoxidable",
-            ],
-            infoMaterials: [
-              "Vinilo de Corte",
-              "Impresión Digital",
-              "Letras 3D",
-              "Grabado Láser",
-              "Serigrafía",
-            ],
-            authorizedUsers: [{ name: "Admin", isAdmin: true, pin: "1234" }],
-          };
-          setDoc(configRef, def);
-          setConfig(def);
-        }
-      },
-      (err) => console.error("Error Config:", err)
+    const unsubConfig = onSnapshot(configRef, (snap) => {
+      if (snap.exists()) {
+        setConfig(snap.data());
+      } else {
+        const def = {
+          floors: ["Planta Baja", "Piso 1", "Piso 2"],
+          services: ["Admisión", "Emergencias"],
+          signalTypes: ["Informativa", "Restrictiva"],
+          typologies: ["Bandera", "Adosado"],
+          materials: ["Acrílico", "PVC"],
+          infoMaterials: ["Vinilo", "Impresión"],
+          authorizedUsers: [{ name: "Admin", isAdmin: true, pin: "1234" }],
+        };
+        setDoc(configRef, def);
+        setConfig(def);
+      }
+    });
+
+    const itemsRef = collection(
+      db,
+      "artifacts",
+      APP_ID,
+      "public",
+      "data",
+      "rotulos"
     );
 
-    const itemsRef = collection(db, "artifacts", APP_ID, "public", "data", "rotulos");
-    const unsubItems = onSnapshot(
-      itemsRef,
-      (snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        data.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-        setItems(data);
-      },
-      (err) => console.error("Error Items:", err)
-    );
+    const unsubItems = onSnapshot(itemsRef, (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setItems(data);
+    });
 
     return () => {
       unsubConfig();
@@ -374,863 +202,217 @@ const compressToJpegBlob = (file) => {
     };
   }, [firebaseUser]);
 
+  /* ======================================================
+     LOGIN
+  ====================================================== */
   const handleLogin = (e) => {
     e.preventDefault();
-    const nameInput = e.target.username.value.trim().toLowerCase();
-    const pinInput = e.target.pin?.value.trim();
+    const name = e.target.username.value.trim().toLowerCase();
+    const pin = e.target.pin.value.trim();
 
-    const found = (config.authorizedUsers || []).find(
-      (u) => (u.name || "").toLowerCase() === nameInput
+    const found = config.authorizedUsers.find(
+      (u) => u.name.toLowerCase() === name
     );
 
-    if (found) {
-      if (found.isAdmin && found.pin !== pinInput) {
-        notify("PIN incorrecto", "error");
-        return;
-      }
-      const session = { ...found, uid: firebaseUser?.uid || "" };
-      setUser(session);
-      localStorage.setItem("hospital_session", JSON.stringify(session));
-      setView("form");
-      notify("Bienvenido " + found.name);
-    } else {
-      notify("Usuario no registrado", "error");
-    }
+    if (!found) return notify("Usuario no registrado", "error");
+    if (found.isAdmin && found.pin !== pin)
+      return notify("PIN incorrecto", "error");
+
+    setUser(found);
+    setView("form");
+    notify("Bienvenido " + found.name);
   };
 
   const handleLogout = () => {
     setUser(null);
-    localStorage.removeItem("hospital_session");
     setView("login");
   };
 
-  const compressImage = (file) => {
-    return new Promise((resolve) => {
+  /* ======================================================
+     IMAGE COMPRESS
+  ====================================================== */
+  const compressToJpegBlob = (file) =>
+    new Promise((resolve) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = (ev) => {
+      reader.onload = (e) => {
         const img = new Image();
-        img.src = ev.target.result;
+        img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const MAX = 800;
-          const scale = img.width > MAX ? MAX / img.width : 1; // no agrandar
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
+          const scale = img.width > 1200 ? 1200 / img.width : 1;
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", 0.6));
+          canvas.toBlob((b) => resolve(b), "image/jpeg", 0.7);
         };
       };
     });
-  };
 
+  /* ======================================================
+     HANDLE PHOTO (ONLINE)
+  ====================================================== */
   const handlePhoto = async (e) => {
-  try {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const currentCount =
-      (formData.photoUrls || []).length + (formData.photoBlobs || []).length;
-
-    if (currentCount >= 3) {
-      notify("Máximo 3 fotos", "error");
-      return;
-    }
-
-    setIsCompressing(true);
-
-    const code = formData.codigo || `ROT-${Date.now().toString().slice(-4)}`;
-    if (!formData.codigo) {
-      setFormData((prev) => ({ ...prev, codigo: code }));
-    }
-
-    const blob = await compressToJpegBlob(file);
-
-    // ?? SIN INTERNET ? guardar en el teléfono
-    if (!isOnline) {
-      setFormData((prev) => ({
-        ...prev,
-        photoBlobs: [...(prev.photoBlobs || []), blob].slice(0, 3),
-      }));
-      notify("Foto guardada offline (pendiente)");
-      return;
-    }
-
-    // ?? CON INTERNET ? subir a Firebase Storage
-    const index = (formData.photoUrls || []).length + 1;
-    const suffix = String(index).padStart(2, "0");
-    const filename = `${code}_${suffix}.jpg`;
-    const path = `rotulos/${APP_ID}/${code}/${filename}`;
-
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
-    const url = await getDownloadURL(storageRef);
-
-    setFormData((prev) => ({
-      ...prev,
-      photoUrls: [...(prev.photoUrls || []), url].slice(0, 3),
-      photoPaths: [...(prev.photoPaths || []), path].slice(0, 3),
-    }));
-
-    notify("Foto cargada");
-  } catch (err) {
-    console.error(err);
-    notify("No se pudo procesar la foto", "error");
-  } finally {
-    setIsCompressing(false);
-    e.target.value = "";
-  }
-};
-  // --- Loading inicial ---
-  if (loading && !user) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#e55e51]" />
-      </div>
-    );
-  }
-
-
-  const exportToCSV = () => {
     try {
-      const rows = items.map((it) => ({
-        codigo: it.codigo || "",
-        fecha: it.fecha || "",
-        responsable: it.responsable || "",
-        piso: it.piso || "",
-        servicio: it.servicio || "",
-        tipoSenal: it.tipoSenal || "",
-        tipologia: it.tipologia || "",
-        material: it.material || "",
-        materialInfo: it.materialInfo || "",
-        ancho: it.ancho || "",
-        largo: it.largo || "",
-        espesor: it.espesor || "",
-        tieneIluminacion: it.tieneIluminacion ? "SI" : "NO",
-        especificacionIluminacion: it.especificacionIluminacion || "",
-        cantidad: it.cantidad ?? 1,
-        fotos_count: (it.fotos || []).length,
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!isOnline) return notify("Sin internet", "error");
+      if (formData.photoUrls.length >= 3)
+        return notify("Máx. 3 fotos", "error");
+
+      setIsCompressing(true);
+
+      const code =
+        formData.codigo || `ROT-${Date.now().toString().slice(-4)}`;
+      if (!formData.codigo)
+        setFormData((p) => ({ ...p, codigo: code }));
+
+      const blob = await compressToJpegBlob(file);
+      const idx = formData.photoUrls.length + 1;
+      const name = `${code}_${String(idx).padStart(2, "0")}.jpg`;
+      const path = `rotulos/${APP_ID}/${code}/${name}`;
+
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, blob);
+      const url = await getDownloadURL(storageRef);
+
+      setFormData((p) => ({
+        ...p,
+        photoUrls: [...p.photoUrls, url],
+        photoPaths: [...p.photoPaths, path],
       }));
 
-      const headers = Object.keys(rows[0] || { codigo: "" });
-
-      // Si no hay registros, igual exporta headers
-      const csvLines = [
-        headers.join(","), // encabezados
-        ...rows.map((row) =>
-          headers
-            .map((h) => {
-              const val = String(row[h] ?? "");
-              // Escapar comillas y comas para CSV
-              const escaped = val.replace(/"/g, '""');
-              return `"${escaped}"`;
-            })
-            .join(",")
-        ),
-      ];
-
-      const csv = csvLines.join("\n");
-
-      const today = new Date().toISOString().slice(0, 10);
-      const filename = `rotulos_inventario_${today}.csv`;
-
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      URL.revokeObjectURL(url);
-
-      notify("CSV descargado");
+      notify("Foto cargada");
     } catch (e) {
       console.error(e);
-      notify("No se pudo exportar CSV", "error");
+      notify("Error foto", "error");
+    } finally {
+      setIsCompressing(false);
+      e.target.value = "";
     }
   };
-  const exportPhotos = async () => {
+
+  /* ======================================================
+     SAVE RECORD
+  ====================================================== */
+  const saveRecord = async () => {
+    if (!isOnline) return notify("Sin internet", "error");
+
     try {
-      let total = 0;
-
-      for (const it of items) {
-        const code = it.codigo || "SIN-CODIGO";
-        const fotos = it.fotos || [];
-
-        for (let i = 0; i < fotos.length; i++) {
-          const base64 = fotos[i];
-          const index = String(i + 1).padStart(2, "0");
-          const filename = `${code}_${index}.jpg`;
-
-          const link = document.createElement("a");
-          link.href = base64;
-          link.download = filename;
-
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-
-          total++;
-          // pequeña pausa para que el navegador no bloquee descargas
-          await new Promise((r) => setTimeout(r, 300));
+      await addDoc(
+        collection(db, "artifacts", APP_ID, "public", "data", "rotulos"),
+        {
+          ...formData,
+          fecha: new Date().toLocaleDateString(),
+          responsable: user.name,
+          timestamp: serverTimestamp(),
         }
-      }
-
-      notify(`Fotos descargadas: ${total}`);
+      );
+      setFormData(initialForm);
+      setView("list");
+      notify("Registro guardado");
     } catch (e) {
       console.error(e);
-      notify("Error al exportar fotos", "error");
+      notify("Error al guardar", "error");
     }
   };
 
-  // --- Login ---
-  if (!user) {
+  /* ======================================================
+     RENDER
+  ====================================================== */
+  if (loading) return <div className="p-10">Cargando...</div>;
+
+  if (!user)
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8">
-        <div className="mb-10 w-full max-w-[200px] animate-in zoom-in-50 duration-700">
-          <HospitalLogo className="w-full h-auto" />
-        </div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-12 text-center">
-          Levantamiento de Inventario
-        </p>
-
-        <form onSubmit={handleLogin} className="w-full max-w-xs space-y-4">
-          <input
-            name="username"
-            required
-            placeholder="Usuario"
-            className="w-full p-5 bg-gray-50 border border-gray-100 rounded-3xl outline-none focus:border-red-200 transition-all font-medium text-center"
-          />
-          <input
-            name="pin"
-            type="password"
-            placeholder="PIN (Admin)"
-            className="w-full p-5 bg-gray-50 border border-gray-100 rounded-3xl outline-none focus:border-red-200 transition-all font-medium text-center"
-          />
-          <Button type="submit" className="w-full py-5 text-lg">
-            Acceder
-          </Button>
-        </form>
-
-        {notification && (
-          <div
-            className={`mt-6 text-xs font-black uppercase tracking-widest ${
-              notification.type === "error" ? "text-red-500" : "text-emerald-500"
-            }`}
-          >
-            {notification.msg}
-          </div>
-        )}
-      </div>
+      <form
+        onSubmit={handleLogin}
+        className="p-10 max-w-xs mx-auto space-y-4"
+      >
+        <input
+          name="username"
+          placeholder="Usuario"
+          className="w-full p-4 border rounded-xl"
+          required
+        />
+        <input
+          name="pin"
+          placeholder="PIN"
+          type="password"
+          className="w-full p-4 border rounded-xl"
+        />
+        <Button type="submit">Entrar</Button>
+      </form>
     );
-  }
 
   return (
-    <div className="min-h-screen bg-[#fcfcfc] pb-32" style={{ fontFamily: BRAND.font }}>
-      <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 px-6 py-4 flex justify-between items-center border-b border-gray-100">
-        <div className="flex items-center gap-4">
-          <HospitalLogo className="h-8 w-auto" />
-          <div className="h-6 w-px bg-gray-100" />
-          <div>
-            <div className="text-[10px] font-black text-[#e55e51] uppercase tracking-tighter">
-              {user.isAdmin ? "Administrador" : "Instalador"}
-            </div>
-            <div className="font-bold text-gray-700 text-sm leading-none">{user.name}</div>
-          </div>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="p-2 text-gray-300 hover:text-red-500 transition-colors"
-        >
-          <LogOut size={20} />
+    <div className="p-6 space-y-4">
+      <header className="flex justify-between items-center">
+        <strong>{user.name}</strong>
+        <button onClick={handleLogout}>
+          <LogOut />
         </button>
       </header>
 
       {notification && (
-        <div
-          className={`fixed top-20 left-6 right-6 z-50 p-4 rounded-2xl shadow-lg text-white text-sm font-bold flex items-center gap-3 animate-bounce ${
-            notification.type === "error" ? "bg-red-500" : "bg-emerald-500"
-          }`}
-        >
-          {notification.type === "error" ? <XCircle size={18} /> : <CheckCircle size={18} />}{" "}
+        <div className="text-sm">
+          {notification.type === "error" ? (
+            <XCircle />
+          ) : (
+            <CheckCircle />
+          )}{" "}
           {notification.msg}
         </div>
       )}
 
-      <main className="p-6 max-w-md mx-auto space-y-8">
-        {/* FORM */}
-        {view === "form" && (
-          <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-            {/* Ubicacion y clasificacion*/}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase">
-                Ubicacion y clasificacion
-              </label>
+      {view === "form" && (
+        <>
+          <input
+            placeholder="Servicio"
+            className="w-full p-3 border rounded"
+            value={formData.servicio}
+            onChange={(e) =>
+              setFormData({ ...formData, servicio: e.target.value })
+            }
+          />
 
-              <select
-                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
-                value={formData.piso}
-                onChange={(e) => setFormData({ ...formData, piso: e.target.value })}
-              >
-                <option value="">Seleccionar Piso</option>
-                {config.floors.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none"
-                value={formData.servicio}
-                onChange={(e) => setFormData({ ...formData, servicio: e.target.value })}
-              >
-                <option value="">Seleccionar Área / Servicio</option>
-                {config.services.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none border-t border-gray-100"
-                value={formData.tipoSenal}
-                onChange={(e) => setFormData({ ...formData, tipoSenal: e.target.value })}
-              >
-                <option value="">Seleccionar Tipo de Señal</option>
-                {config.signalTypes.map((st) => (
-                  <option key={st} value={st}>
-                    {st}
-                  </option>
-                ))}
-              </select>
-            </Card>
-
-            {/* Tipología */}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Tipo de Instalacion
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {config.typologies.map((t) => (
-                  <PillButton
-                    key={t}
-                    active={formData.tipologia === t}
-                    onClick={() => setFormData({ ...formData, tipologia: t })}
-                    activeClass="bg-[#e55e51] text-white border-[#e55e51] shadow-md"
-                    inactiveClass="bg-white text-gray-400 border-gray-100"
-                  >
-                    {t}
-                  </PillButton>
-                ))}
-              </div>
-            </Card>
-
-            {/* Material base */}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Material Base
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {config.materials.map((m) => (
-                  <PillButton
-                    key={m}
-                    active={formData.material === m}
-                    onClick={() => setFormData({ ...formData, material: m })}
-                    activeClass="bg-gray-800 text-white border-gray-800 shadow-md"
-                    inactiveClass="bg-white text-gray-400 border-gray-100"
-                  >
-                    {m}
-                  </PillButton>
-                ))}
-              </div>
-            </Card>
-
-            {/* Material info */}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Grafica / Textos
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {config.infoMaterials.map((im) => (
-                  <PillButton
-                    key={im}
-                    active={formData.materialInfo === im}
-                    onClick={() => setFormData({ ...formData, materialInfo: im })}
-                    activeClass="bg-indigo-600 text-white border-indigo-600 shadow-md"
-                    inactiveClass="bg-white text-gray-400 border-gray-100"
-                  >
-                    {im}
-                  </PillButton>
-                ))}
-              </div>
-            </Card>
-
-            {/* Dimensiones y Cantidad */}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Dimensiones y Cantidad
-              </label>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-[8px] font-bold text-gray-300 ml-1">Ancho (cm)</span>
-                  <input
-                    type="number"
-                    className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
-                    value={formData.ancho}
-                    onChange={(e) => setFormData({ ...formData, ancho: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] font-bold text-gray-300 ml-1">Largo (cm)</span>
-                  <input
-                    type="number"
-                    className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
-                    value={formData.largo}
-                    onChange={(e) => setFormData({ ...formData, largo: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <span className="text-[8px] font-bold text-gray-300 ml-1">Espesor (mm)</span>
+          <div className="flex gap-2">
+            {formData.photoUrls.map((u) => (
+              <img key={u} src={u} className="w-20 h-20 object-cover" />
+            ))}
+            {formData.photoUrls.length < 3 && (
+              <label className="w-20 h-20 border flex items-center justify-center">
+                {isCompressing ? "..." : <Camera />}
                 <input
-                  type="number"
-                  step="0.1"
-                  className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-center font-bold"
-                  value={formData.espesor}
-                  onChange={(e) => setFormData({ ...formData, espesor: e.target.value })}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  onChange={handlePhoto}
                 />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl mt-2">
-                <span className="text-[10px] font-black text-gray-400 uppercase ml-2">Cantidad</span>
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        cantidad: Math.max(1, Number(formData.cantidad || 1) - 1),
-                      })
-                    }
-                    className="p-2 text-gray-300"
-                    type="button"
-                  >
-                    <Minus size={18} />
-                  </button>
-                  <span className="font-black text-lg">{formData.cantidad}</span>
-                  <button
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        cantidad: Math.max(1, Number(formData.cantidad || 1) + 1),
-                      })
-                    }
-                    className="p-2 text-[#e55e51]"
-                    type="button"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </div>
-              </div>
-            </Card>
-
-            {/* Iluminación */}
-            <Card className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                  Iluminacion?
-                </label>
-                <button
-                  onClick={() =>
-                    setFormData({ ...formData, tieneIluminacion: !formData.tieneIluminacion })
-                  }
-                  className={`p-3 rounded-xl transition-colors ${
-                    formData.tieneIluminacion
-                      ? "bg-amber-100 text-amber-600"
-                      : "bg-gray-100 text-gray-300"
-                  }`}
-                  type="button"
-                >
-                  {formData.tieneIluminacion ? <Zap size={18} /> : <ZapOff size={18} />}
-                </button>
-              </div>
-
-              {formData.tieneIluminacion && (
-                <input
-                  placeholder="Especificar (LED, Caja, etc.)"
-                  className="w-full p-4 bg-amber-50 rounded-2xl border border-amber-100 outline-none font-bold text-sm"
-                  value={formData.especificacionIluminacion}
-                  onChange={(e) =>
-                    setFormData({ ...formData, especificacionIluminacion: e.target.value })
-                  }
-                />
-              )}
-            </Card>
-
-            {/* Fotos */}
-            <Card className="p-6 space-y-4 text-center">
-              <label className="block text-[10px] font-black text-gray-400 uppercase">
-                Evidencia Fotográfica ({(formData.fotos || []).length}/3)
               </label>
-
-              <div className="grid grid-cols-3 gap-3">
-                {(formData.fotos || []).map((f, i) => (
-                  <div
-                    key={i}
-                    className="aspect-square rounded-2xl overflow-hidden border relative group shadow-sm"
-                  >
-                    <img src={f} className="w-full h-full object-cover" />
-                    <button
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          fotos: (formData.fotos || []).filter((_, idx) => idx !== i),
-                        })
-                      }
-                      className="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      type="button"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-
-                {(formData.fotos || []).length < 3 && (
-                  <label className="aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300 cursor-pointer">
-                    {isCompressing ? (
-                      <div className="animate-spin h-6 w-6 border-2 border-[#e55e51] border-t-transparent rounded-full mb-1" />
-                    ) : (
-                      <Camera className="mb-1" />
-                    )}
-                    <span className="text-[8px] font-bold uppercase">Capturar</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={handlePhoto}
-                    />
-                  </label>
-                )}
-              </div>
-            </Card>
-
-            <Button
-              onClick={saveRecord}
-              className="w-full py-6 text-sm rounded-[2rem] font-black uppercase tracking-widest shadow-2xl"
-            >
-              Guardar Registro
-            </Button>
-          </div>
-        )}
-
-        {/* LIST */}
-        {view === "list" && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            <h2 className="text-2xl font-black text-gray-800">Registros Recientes</h2>
-
-            {items.length === 0 ? (
-              <div className="text-center py-20 text-gray-300 font-bold text-xs uppercase">
-                Sin registros
-              </div>
-            ) : (
-              items.map((it) => (
-                <Card key={it.id} className="p-4 flex gap-4 items-center">
-                  <div className="w-16 h-16 bg-gray-50 rounded-2xl overflow-hidden border flex-shrink-0 flex items-center justify-center">
-                    {it.fotos?.[0] ? (
-                      <img src={it.fotos[0]} className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="text-gray-200" size={22} />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[9px] font-black text-[#e55e51] uppercase bg-red-50 px-1.5 py-0.5 rounded">
-                        {it.codigo}
-                      </span>
-                      <span className="text-[9px] font-black text-gray-400 uppercase truncate">
-                        {it.tipoSenal || "S/T"}
-                      </span>
-                    </div>
-
-                    <div className="font-black text-gray-800 truncate leading-tight">
-                      {it.servicio}
-                    </div>
-
-                    <div className="text-[10px] text-gray-400 font-bold mt-1">
-                      {(it.tipologia || "S/T")} · {(it.material || "S/M")} /{" "}
-                      {(it.materialInfo || "S/G")}
-                      <br />
-                      {(it.piso || "S/P")} · {(it.cantidad || 1)} ud.
-                    </div>
-                  </div>
-
-                  {user.isAdmin && (
-                    <button
-                      onClick={() =>
-                        deleteDoc(
-                          doc(db, "artifacts", APP_ID, "public", "data", "rotulos", it.id)
-                        )
-                      }
-                      className="p-2 text-gray-200 hover:text-red-500"
-                      type="button"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </Card>
-              ))
             )}
           </div>
-        )}
 
-        {/* ADMIN */}
-        {view === "admin" && user.isAdmin && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <h2 className="text-2xl font-black text-gray-800 px-1 flex items-center gap-2">
-              <Settings size={18} /> Configuración
-            </h2>
+          <Button onClick={saveRecord}>Guardar Registro</Button>
+          <Button variant="secondary" onClick={() => setView("list")}>
+            Ver lista
+          </Button>
+        </>
+      )}
 
-            {/* Config de catálogos (como tu HTML) */}
-            <Card className="p-6 space-y-4">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Tipos de Señal
-              </label>
-              <textarea
-                id="edit-signalTypes"
-                defaultValue={(config.signalTypes || []).join("\n")}
-                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
-              />
-
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Servicios / Áreas
-              </label>
-              <textarea
-                id="edit-services"
-                defaultValue={(config.services || []).join("\n")}
-                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
-              />
-
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Tipologías de Soporte
-              </label>
-              <textarea
-                id="edit-typologies"
-                defaultValue={(config.typologies || []).join("\n")}
-                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
-              />
-
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Materiales Base
-              </label>
-              <textarea
-                id="edit-materials"
-                defaultValue={(config.materials || []).join("\n")}
-                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
-              />
-
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Materiales de Información
-              </label>
-              <textarea
-                id="edit-infoMaterials"
-                defaultValue={(config.infoMaterials || []).join("\n")}
-                className="w-full p-4 bg-gray-50 rounded-2xl h-24 outline-none text-xs font-mono font-bold border-none"
-              />
-
-              <Button
-                variant="dark"
-                className="w-full"
-                onClick={() => {
-                  const signalTypes = document
-                    .getElementById("edit-signalTypes")
-                    .value.split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-
-                  const services = document
-                    .getElementById("edit-services")
-                    .value.split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-
-                  const typologies = document
-                    .getElementById("edit-typologies")
-                    .value.split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-
-                  const materials = document
-                    .getElementById("edit-materials")
-                    .value.split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-
-                  const infoMaterials = document
-                    .getElementById("edit-infoMaterials")
-                    .value.split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-
-                  updateGlobalConfig({
-                    ...config,
-                    signalTypes,
-                    services,
-                    typologies,
-                    materials,
-                    infoMaterials,
-                  });
-                }}
-              >
-                Guardar Cambios
-              </Button>
-            </Card>
-// --- Boton exportar cvs ---
-
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={exportToCSV}
-              >
-                Exportar CSV (Excel)
-              </Button>
-
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={exportPhotos}
-              >
-                Exportar Fotos (JPG)
-              </Button>
-
-            {/* Usuarios (lo que ya tenías) */}
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mt-4">
-              <UserCheck size={16} /> Control de Personal
-            </h3>
-
-            <Card className="p-6 space-y-4">
-              {(config.authorizedUsers || []).map((u, i) => (
-                <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
-                  <div>
-                    <div
-                      className={`text-sm font-bold ${
-                        u.isAdmin ? "text-red-500" : "text-gray-700"
-                      }`}
-                    >
-                      {u.name}
-                    </div>
-                    <div className="text-[8px] uppercase text-gray-400 tracking-widest font-black">
-                      {u.isAdmin ? `Admin (PIN: ${u.pin})` : "Instalador"}
-                    </div>
-                  </div>
-
-                  {u.name !== "Admin" && (
-                    <button
-                      onClick={() => {
-                        const copy = [...config.authorizedUsers];
-                        copy.splice(i, 1);
-                        updateGlobalConfig({ ...config, authorizedUsers: copy });
-                      }}
-                      className="text-gray-300 hover:text-red-500 transition-colors"
-                      type="button"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              <div className="pt-4 border-t space-y-3">
-                <input
-                  id="u_name"
-                  placeholder="Nombre completo"
-                  className="w-full p-4 bg-gray-50 rounded-2xl outline-none text-sm font-medium"
-                />
-                <div className="flex gap-2">
-                  <input
-                    id="u_pin"
-                    placeholder="PIN (opcional)"
-                    className="flex-1 p-4 bg-gray-50 rounded-2xl outline-none text-sm font-medium"
-                  />
-                  <button
-  type="button"
-  onClick={() => {
-    const n = document.getElementById("u_name").value.trim();
-    const p = document.getElementById("u_pin").value.trim();
-
-    if (!n) {
-      notify("Escribe un nombre", "error");
-      return;
-    }
-
-    updateGlobalConfig({
-      ...config,
-      authorizedUsers: [
-        ...(config.authorizedUsers || []),
-        { name: n, pin: p, isAdmin: !!p },
-      ],
-    });
-
-    document.getElementById("u_name").value = "";
-    document.getElementById("u_pin").value = "";
-  }}
-  className="bg-gray-800 text-white px-6 rounded-2xl font-black transition-transform active:scale-90"
->
-  +
-</button>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
-      </main>
-
-      {/* NAV */}
-      <nav className="fixed bottom-6 left-6 right-6 h-20 bg-white/90 backdrop-blur-xl rounded-[35px] border border-gray-100 shadow-2xl flex justify-around items-center px-4 z-50">
-        <button
-          onClick={() => setView("form")}
-          className={`p-4 rounded-2xl transition-all ${
-            view === "form"
-              ? "bg-[#f9dcd1] text-[#e55e51] scale-110"
-              : "text-gray-300 hover:text-gray-400"
-          }`}
-          type="button"
-        >
-          <Plus size={24} />
-        </button>
-
-        <button
-          onClick={() => setView("list")}
-          className={`p-4 rounded-2xl transition-all ${
-            view === "list" ? "bg-[#f9dcd1] text-[#e55e51] scale-110" : "text-gray-300"
-          }`}
-          type="button"
-        >
-          <Database size={24} />
-        </button>
-
-        {user.isAdmin && (
-          <button
-            onClick={() => setView("admin")}
-            className={`p-4 rounded-2xl transition-all ${
-              view === "admin"
-                ? "bg-[#f9dcd1] text-[#e55e51] scale-110"
-                : "text-gray-300"
-            }`}
-            type="button"
-          >
-            <Settings size={24} />
-          </button>
-        )}
-      </nav>
+      {view === "list" && (
+        <>
+          {items.map((it) => (
+            <div key={it.id} className="border p-3 rounded">
+              {it.servicio}
+            </div>
+          ))}
+          <Button variant="secondary" onClick={() => setView("form")}>
+            Nuevo
+          </Button>
+        </>
+      )}
     </div>
   );
 }
