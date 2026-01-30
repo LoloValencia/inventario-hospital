@@ -250,20 +250,20 @@ export default function App() {
           });
         } else {
           const def = {
-            floors: ["Sótano", "Planta Baja", "Piso 1", "Piso 2", "Piso 3"],
+            floors: ["Subsuelo", "Planta Baja", "Piso 1", "Piso 2", "Piso 3", "Piso 4","Piso 5","Exterior"],
             services: ["Admisión", "Emergencias", "Rayos X", "Laboratorio", "UCI"],
             signalTypes: [
+              "Identificativa",
+              "Direccional",
+              "Orientativa",
               "Informativa",
-              "Preventiva",
-              "Restrictiva",
-              "Emergencia",
-              "Obligación",
+              "Reguladora",
             ],
-            typologies: ["Colgante", "Bandera", "Adosado", "Tótem", "Directorio"],
+            typologies: ["Colgante", "Bandera", "Adosado", "Tótem", "Paleta"],
             materials: [
               "Acrílico",
               "Alucobond",
-              "PVC (Sintra)",
+              "Sintra",
               "Vidrio",
               "Acero Inoxidable",
             ],
@@ -399,17 +399,17 @@ export default function App() {
   };
 
   const updateGlobalConfig = async (newConfig) => {
-    setLoading(true);
-    try {
-      const ref = doc(db, "artifacts", APP_ID, "public", "data", "config", "global");
-      await updateDoc(ref, newConfig);
-      notify("Configuración actualizada");
-    } catch (e) {
-      console.error(e);
-      notify("Error al guardar config", "error");
-    }
-    setLoading(false);
-  };
+  setLoading(true);
+  try {
+    const refDoc = doc(db, "artifacts", APP_ID, "public", "data", "config", "global");
+    await setDoc(refDoc, newConfig, { merge: true });
+    notify("Configuración actualizada");
+  } catch (e) {
+    console.error(e);
+    notify("Error al guardar config", "error");
+  }
+  setLoading(false);
+};
 
   // --- Loading inicial ---
   if (loading && !user) {
@@ -595,10 +595,10 @@ export default function App() {
         {/* FORM */}
         {view === "form" && (
           <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-            {/* Ubicación y Clasificación */}
+            {/* Ubicacion y clasificacion*/}
             <Card className="p-6 space-y-4">
               <label className="block text-[10px] font-black text-gray-400 uppercase">
-                Ubicación y Clasificación
+                Ubicacion y clasificacion
               </label>
 
               <select
@@ -644,7 +644,7 @@ export default function App() {
             {/* Tipología */}
             <Card className="p-6 space-y-4">
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Tipología de Soporte
+                Tipo de Instalacion
               </label>
               <div className="flex flex-wrap gap-2">
                 {config.typologies.map((t) => (
@@ -684,7 +684,7 @@ export default function App() {
             {/* Material info */}
             <Card className="p-6 space-y-4">
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                Gráfica / Vinilos
+                Grafica / Textos
               </label>
               <div className="flex flex-wrap gap-2">
                 {config.infoMaterials.map((im) => (
@@ -775,7 +775,7 @@ export default function App() {
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                  ¿Iluminación?
+                  Iluminacion?
                 </label>
                 <button
                   onClick={() =>
@@ -1023,7 +1023,7 @@ export default function App() {
                 Guardar Cambios
               </Button>
             </Card>
-// Boton exportar csv
+// --- Boton exportar cvs ---
 
               <Button
                 variant="secondary"
@@ -1091,26 +1091,31 @@ export default function App() {
                     className="flex-1 p-4 bg-gray-50 rounded-2xl outline-none text-sm font-medium"
                   />
                   <button
-                    onClick={() => {
-                      const n = document.getElementById("u_name").value.trim();
-                      const p = document.getElementById("u_pin").value.trim();
-                      if (n) {
-                        updateGlobalConfig({
-                          ...config,
-                          authorizedUsers: [
-                            ...(config.authorizedUsers || []),
-                            { name: n, pin: p, isAdmin: !!p },
-                          ],
-                        });
-                        document.getElementById("u_name").value = "";
-                        document.getElementById("u_pin").value = "";
-                      }
-                    }}
-                    className="bg-gray-800 text-white px-6 rounded-2xl font-black transition-transform active:scale-90"
-                    type="button"
-                  >
-                    +
-                  </button>
+  type="button"
+  onClick={() => {
+    const n = document.getElementById("u_name").value.trim();
+    const p = document.getElementById("u_pin").value.trim();
+
+    if (!n) {
+      notify("Escribe un nombre", "error");
+      return;
+    }
+
+    updateGlobalConfig({
+      ...config,
+      authorizedUsers: [
+        ...(config.authorizedUsers || []),
+        { name: n, pin: p, isAdmin: !!p },
+      ],
+    });
+
+    document.getElementById("u_name").value = "";
+    document.getElementById("u_pin").value = "";
+  }}
+  className="bg-gray-800 text-white px-6 rounded-2xl font-black transition-transform active:scale-90"
+>
+  +
+</button>
                 </div>
               </div>
             </Card>
