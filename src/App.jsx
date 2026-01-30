@@ -1,3 +1,5 @@
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { enqueue, readQueue, removeById } from "./offlineQueue";
 import React, { useEffect, useMemo, useState } from "react";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import {
@@ -166,25 +168,97 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isCompressing, setIsCompressing] = useState(false);
   const [notification, setNotification] = useState(null);
+const [isOnline, setIsOnline] = useState(navigator.onLine);
+const [pendingCount, setPendingCount] = useState(0);
+const [syncing, setSyncing] = useState(false);
+
+useEffect(() => {
+  const on = async () => {
+    setIsOnline(true);
+    const q = await readQueue();
+    setPendingCount(q.length);
+  };
+  const off = async () => {
+    setIsOnline(false);
+    const q = await readQueue();
+    setPendingCount(q.length);
+  };
+
+  window.addEventListener("online", on);
+  window.addEventListener("offline", off);
+
+  // al cargar app
+  (async () => {
+    const q = await readQueue();
+    setPendingCount(q.length);
+  })();
+
+  return () => {
+    window.removeEventListener("online", on);
+    window.removeEventListener("offline", off);
+  };
+}, []);
+
+const compressToJpegBlob = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.src = ev.target.result;
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 1200;
+        const scale = img.width > MAX ? MAX / img.width : 1;
+
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("No se pudo comprimir"));
+            resolve(blob);
+          },
+          "image/jpeg",
+          0.7
+        );
+      };
+
+      img.onerror = () => reject(new Error("Imagen inválida"));
+    };
+
+    reader.onerror = () => reject(new Error("No se pudo leer archivo"));
+  });
+};
 
   const initialForm = useMemo(
-    () => ({
-      piso: "",
-      servicio: "",
-      tipoSenal: "",
-      tipologia: "",
-      material: "",
-      materialInfo: "",
-      ancho: "",
-      largo: "",
-      espesor: "",
-      tieneIluminacion: false,
-      especificacionIluminacion: "",
-      cantidad: 1,
-      fotos: [],
-    }),
-    []
-  );
+  () => ({
+    codigo: "",
+    piso: "",
+    servicio: "",
+    tipoSenal: "",
+    tipologia: "",
+    material: "",
+    materialInfo: "",
+    ancho: "",
+    largo: "",
+    espesor: "",
+    tieneIluminacion: false,
+    especificacionIluminacion: "",
+    cantidad: 1,
+
+    // ? NUEVO
+    photoUrls: [],   // cuando SI hay internet
+    photoPaths: [],  // para saber dónde quedó guardada en Storage
+    photoBlobs: [],  // cuando NO hay internet (se guarda en el teléfono temporalmente)
+  }),
+  []
+);
 
   const [formData, setFormData] = useState(initialForm);
 
@@ -352,65 +426,62 @@ export default function App() {
   };
 
   const handlePhoto = async (e) => {
-    if ((formData.fotos || []).length >= 3) return;
-    setIsCompressing(true);
+  try {
     const file = e.target.files?.[0];
-    if (file) {
-      const res = await compressImage(file);
-      setFormData((prev) => ({
-        ...prev,
-        fotos: [...(prev.fotos || []), res].slice(0, 3),
-      }));
-    }
-    setIsCompressing(false);
-  };
+    if (!file) return;
 
-  const saveRecord = async () => {
-    const required = ["piso", "servicio", "tipoSenal", "tipologia", "material", "materialInfo"];
-    const missing = required.filter((k) => !String(formData[k] || "").trim());
-    if (missing.length > 0) {
-      notify("Complete los campos obligatorios", "error");
+    const currentCount =
+      (formData.photoUrls || []).length + (formData.photoBlobs || []).length;
+
+    if (currentCount >= 3) {
+      notify("Máximo 3 fotos", "error");
       return;
     }
 
-    setLoading(true);
-    try {
-      const colRef = collection(db, "artifacts", APP_ID, "public", "data", "rotulos");
-      const qty = Math.max(1, Number(formData.cantidad || 1));
+    setIsCompressing(true);
 
-      // Guardamos UN documento con cantidad (como tu nuevo HTML), NO uno por unidad
-      await addDoc(colRef, {
-        ...formData,
-        cantidad: qty,
-        codigo: `ROT-${Date.now().toString().slice(-4)}`,
-        fecha: new Date().toLocaleDateString(),
-        responsable: user?.name || "Sin nombre",
-        timestamp: serverTimestamp(),
-      });
-
-      setFormData(initialForm);
-      setView("list");
-      notify("Registro guardado");
-    } catch (e) {
-      console.error(e);
-      notify("Error al guardar", "error");
+    const code = formData.codigo || `ROT-${Date.now().toString().slice(-4)}`;
+    if (!formData.codigo) {
+      setFormData((prev) => ({ ...prev, codigo: code }));
     }
-    setLoading(false);
-  };
 
-  const updateGlobalConfig = async (newConfig) => {
-  setLoading(true);
-  try {
-    const refDoc = doc(db, "artifacts", APP_ID, "public", "data", "config", "global");
-    await setDoc(refDoc, newConfig, { merge: true });
-    notify("Configuración actualizada");
-  } catch (e) {
-    console.error(e);
-    notify("Error al guardar config", "error");
+    const blob = await compressToJpegBlob(file);
+
+    // ?? SIN INTERNET ? guardar en el teléfono
+    if (!isOnline) {
+      setFormData((prev) => ({
+        ...prev,
+        photoBlobs: [...(prev.photoBlobs || []), blob].slice(0, 3),
+      }));
+      notify("Foto guardada offline (pendiente)");
+      return;
+    }
+
+    // ?? CON INTERNET ? subir a Firebase Storage
+    const index = (formData.photoUrls || []).length + 1;
+    const suffix = String(index).padStart(2, "0");
+    const filename = `${code}_${suffix}.jpg`;
+    const path = `rotulos/${APP_ID}/${code}/${filename}`;
+
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+    const url = await getDownloadURL(storageRef);
+
+    setFormData((prev) => ({
+      ...prev,
+      photoUrls: [...(prev.photoUrls || []), url].slice(0, 3),
+      photoPaths: [...(prev.photoPaths || []), path].slice(0, 3),
+    }));
+
+    notify("Foto cargada");
+  } catch (err) {
+    console.error(err);
+    notify("No se pudo procesar la foto", "error");
+  } finally {
+    setIsCompressing(false);
+    e.target.value = "";
   }
-  setLoading(false);
 };
-
   // --- Loading inicial ---
   if (loading && !user) {
     return (
@@ -420,7 +491,6 @@ export default function App() {
     );
   }
 
-// --- Exportar cvs ---
 
   const exportToCSV = () => {
     try {
