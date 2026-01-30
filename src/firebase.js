@@ -11,13 +11,14 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// ?? DIAGNÓSTICO (TEMPORAL)
-console.log("FIREBASE CONFIG >>>", firebaseConfig);
-if (!firebaseConfig.apiKey) console.error("FALTA VITE_FIREBASE_API_KEY (undefined/vacío)");
-if (!firebaseConfig.projectId) console.error("FALTA VITE_FIREBASE_PROJECT_ID (undefined/vacío)");
+// Inicializar Firebase
 
+console.log("APIKEY EN PRODUCCION:", import.meta.env.VITE_FIREBASE_API_KEY);
+console.log("PROJECT ID EN PRODUCCION:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
 const app = initializeApp(firebaseConfig);
 
+// Servicios
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
 export default app;
