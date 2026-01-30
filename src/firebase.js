@@ -11,18 +11,6 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// ?? PRUEBA DEFINITIVA (TEMPORAL)
-alert(
-  "API KEY: " + (firebaseConfig.apiKey || "VACIA/UNDEFINED") +
-  "\nPROJECT ID: " + (firebaseConfig.projectId || "VACIO/UNDEFINED") +
-  "\nAUTH DOMAIN: " + (firebaseConfig.authDomain || "VACIO/UNDEFINED")
-);
-
-throw new Error(
-  "ENV CHECK => apiKey=" + (import.meta.env.VITE_FIREBASE_API_KEY || "UNDEFINED") +
-  " | projectId=" + (import.meta.env.VITE_FIREBASE_PROJECT_ID || "UNDEFINED") +
-  " | authDomain=" + (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "UNDEFINED")
-);
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
