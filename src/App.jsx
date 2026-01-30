@@ -420,6 +420,103 @@ export default function App() {
     );
   }
 
+// --- Exportar cvs ---
+
+  const exportToCSV = () => {
+    try {
+      const rows = items.map((it) => ({
+        codigo: it.codigo || "",
+        fecha: it.fecha || "",
+        responsable: it.responsable || "",
+        piso: it.piso || "",
+        servicio: it.servicio || "",
+        tipoSenal: it.tipoSenal || "",
+        tipologia: it.tipologia || "",
+        material: it.material || "",
+        materialInfo: it.materialInfo || "",
+        ancho: it.ancho || "",
+        largo: it.largo || "",
+        espesor: it.espesor || "",
+        tieneIluminacion: it.tieneIluminacion ? "SI" : "NO",
+        especificacionIluminacion: it.especificacionIluminacion || "",
+        cantidad: it.cantidad ?? 1,
+        fotos_count: (it.fotos || []).length,
+      }));
+
+      const headers = Object.keys(rows[0] || { codigo: "" });
+
+      // Si no hay registros, igual exporta headers
+      const csvLines = [
+        headers.join(","), // encabezados
+        ...rows.map((row) =>
+          headers
+            .map((h) => {
+              const val = String(row[h] ?? "");
+              // Escapar comillas y comas para CSV
+              const escaped = val.replace(/"/g, '""');
+              return `"${escaped}"`;
+            })
+            .join(",")
+        ),
+      ];
+
+      const csv = csvLines.join("\n");
+
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `rotulos_inventario_${today}.csv`;
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+
+      notify("CSV descargado");
+    } catch (e) {
+      console.error(e);
+      notify("No se pudo exportar CSV", "error");
+    }
+  };
+  const exportPhotos = async () => {
+    try {
+      let total = 0;
+
+      for (const it of items) {
+        const code = it.codigo || "SIN-CODIGO";
+        const fotos = it.fotos || [];
+
+        for (let i = 0; i < fotos.length; i++) {
+          const base64 = fotos[i];
+          const index = String(i + 1).padStart(2, "0");
+          const filename = `${code}_${index}.jpg`;
+
+          const link = document.createElement("a");
+          link.href = base64;
+          link.download = filename;
+
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+
+          total++;
+          // pequeña pausa para que el navegador no bloquee descargas
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+
+      notify(`Fotos descargadas: ${total}`);
+    } catch (e) {
+      console.error(e);
+      notify("Error al exportar fotos", "error");
+    }
+  };
+
   // --- Login ---
   if (!user) {
     return (
@@ -926,6 +1023,23 @@ export default function App() {
                 Guardar Cambios
               </Button>
             </Card>
+// Boton exportar csv
+
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={exportToCSV}
+              >
+                Exportar CSV (Excel)
+              </Button>
+
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={exportPhotos}
+              >
+                Exportar Fotos (JPG)
+              </Button>
 
             {/* Usuarios (lo que ya tenías) */}
             <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mt-4">
