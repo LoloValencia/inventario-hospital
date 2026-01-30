@@ -11,14 +11,15 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Inicializar Firebase
+// ?? PRUEBA DEFINITIVA (TEMPORAL)
+alert(
+  "API KEY: " + (firebaseConfig.apiKey || "VACIA/UNDEFINED") +
+  "\nPROJECT ID: " + (firebaseConfig.projectId || "VACIO/UNDEFINED") +
+  "\nAUTH DOMAIN: " + (firebaseConfig.authDomain || "VACIO/UNDEFINED")
+);
 
-console.log("APIKEY EN PRODUCCION:", import.meta.env.VITE_FIREBASE_API_KEY);
-console.log("PROJECT ID EN PRODUCCION:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
 const app = initializeApp(firebaseConfig);
 
-// Servicios
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
 export default app;
